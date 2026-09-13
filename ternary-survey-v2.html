@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Values Survey</title>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    max-width: 480px;
+    margin: 40px auto;
+    padding: 0 16px;
+    color: #1a1a1a;
+  }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  p.instructions { font-size: 14px; color: #555; margin-top: 0; }
+  .plot-block { margin-bottom: 28px; }
+  .plot-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+  svg { width: 100%; cursor: crosshair; border-radius: 8px; }
+  .readout {
+    display: none;
+    margin: 10px 0;
+    font-size: 14px;
+    text-align: center;
+    font-weight: 500;
+  }
+  button {
+    display: block;
+    width: 100%;
+    padding: 10px;
+    font-size: 15px;
+    border-radius: 6px;
+    border: none;
+    background: #2563eb;
+    color: white;
+    cursor: pointer;
+    margin-top: 8px;
+  }
+  button:disabled { background: #9ca3af; cursor: not-allowed; }
+  #status { margin-top: 12px; font-size: 13px; text-align: center; min-height: 18px; }
+  .success { color: #16a34a; }
+  .error { color: #dc2626; }
+</style>
+</head>
+<body>
+
+<h1>Present vs. Future Priorities</h1>
+<p class="instructions">For each triangle, click the point that best reflects the balance between the three values.</p>
+
+<div class="plot-block">
+  <div class="plot-title">Present</div>
+  <svg id="tri-present" viewBox="0 0 400 380" role="img" aria-label="Ternary plot input for the present"></svg>
+  <div id="readout-present" class="readout"></div>
+</div>
+
+<div class="plot-block">
+  <div class="plot-title">Future</div>
+  <svg id="tri-future" viewBox="0 0 400 380" role="img" aria-label="Ternary plot input for the future"></svg>
+  <div id="readout-future" class="readout"></div>
+</div>
+
+<button id="submitBtn" disabled>Submit response</button>
+<div id="status"></div>
+
+<script>
+  // --- PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE ---
+  const ENDPOINT_URL = "https://script.google.com/macros/s/AKfycbwVVnq-Gh7iqGv_b7ee9m82tV351LeyuhFynNuFR6WUDZawq98jvbd94CLORvxqYpvA/exec";
+  // Must match the SECRET_TOKEN constant in your Apps Script
+  const SECRET_TOKEN = "0818072000";
+
+  const LABELS = { top: "Economic\nProductivity", left: "Individual\nAutonomy", right: "Collective\nCare" };
+
+  const A = {x:200,y:30}, B = {x:20,y:340}, C = {x:380,y:340};
+
+  function toBary(px, py) {
+    const detT = (B.y-C.y)*(A.x-C.x) + (C.x-B.x)*(A.y-C.y);
+    const a = ((B.y-C.y)*(px-C.x) + (C.x-B.x)*(py-C.y)) / detT;
+    const b = ((C.y-A.y)*(px-C.x) + (A.x-C.x)*(py-C.y)) / detT;
+    const c = 1 - a - b;
+    return {econ: a, auto: b, care: c}; // econ=top, auto=left, care=right
+  }
+
+  function inside(bc) {
+    return bc.econ >= -0.001 && bc.auto >= -0.001 && bc.care >= -0.001;
+  }
+
+  function buildPlot(svgEl) {
+    svgEl.innerHTML = `
+      <polygon points="200,30 20,340 380,340" fill="#f9fafb" stroke="#374151" stroke-width="1"/>
+      <text x="200" y="20" font-size="12" text-anchor="middle" fill="#374151">${LABELS.top.replace('\n',' ')}</text>
+      <text x="8" y="358" font-size="12" text-anchor="start" fill="#374151">${LABELS.left.replace('\n',' ')}</text>
+      <text x="392" y="358" font-size="12" text-anchor="end" fill="#374151">${LABELS.right.replace('\n',' ')}</text>
+      <circle class="marker" cx="200" cy="200" r="7" fill="#2563eb" style="display:none;"/>
+    `;
+  }
+
+  function wirePlot(svgId, readoutId) {
+    const svg = document.getElementById(svgId);
+    buildPlot(svg);
+    const marker = svg.querySelector('.marker');
+    const readout = document.getElementById(readoutId);
+    const state = { value: null };
+
+    svg.addEventListener('click', (e) => {
+      const rect = svg.getBoundingClientRect();
+      const scaleX = 400 / rect.width, scaleY = 380 / rect.height;
+      const px = (e.clientX - rect.left) * scaleX;
+      const py = (e.clientY - rect.top) * scaleY;
+      const bc = toBary(px, py);
+      if (!inside(bc)) return;
+
+      marker.setAttribute('cx', px);
+      marker.setAttribute('cy', py);
+      marker.style.display = 'block';
+      state.value = bc;
+
+      const econ = Math.round(bc.econ * 100);
+      const auto = Math.round(bc.auto * 100);
+      const care = 100 - econ - auto;
+      readout.style.display = 'block';
+      readout.textContent = `Economic Productivity ${econ}%  ·  Individual Autonomy ${auto}%  ·  Collective Care ${care}%`;
+      checkReady();
+    });
+
+    return state;
+  }
+
+  const presentState = wirePlot('tri-present', 'readout-present');
+  const futureState = wirePlot('tri-future', 'readout-future');
+  const submitBtn = document.getElementById('submitBtn');
+  const statusEl = document.getElementById('status');
+
+  function checkReady() {
+    submitBtn.disabled = !(presentState.value && futureState.value);
+  }
+
+  // Submit handler: runs when the button is clicked
+  submitBtn.addEventListener('click', async () => {
+    if (!presentState.value || !futureState.value) return;
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Submitting...';
+    try {
+      await fetch(ENDPOINT_URL, {
+        method: "POST",
+        body: JSON.stringify({
+          token: SECRET_TOKEN,
+          presentEcon: presentState.value.econ,
+          presentAuto: presentState.value.auto,
+          presentCare: presentState.value.care,
+          futureEcon: futureState.value.econ,
+          futureAuto: futureState.value.auto,
+          futureCare: futureState.value.care
+        }),
+        headers: { "Content-Type": "text/plain" }
+      });
+      statusEl.textContent = 'Thanks! Your response was recorded.';
+      statusEl.className = 'success';
+      submitBtn.textContent = 'Submitted';
+    } catch (err) {
+      statusEl.textContent = 'Could not reach the sheet. Check the endpoint URL and try again.';
+      statusEl.className = 'error';
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Submit response';
+    }
+  });
+</script>
+
+</body>
+</html>
