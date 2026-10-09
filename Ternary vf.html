@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Digital Society Group 45 Survey Website: Present vs Future values</title>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    max-width: 480px;
+    margin: 40px auto;
+    padding: 0 16px;
+    color: #1a1a1a;
+    line-height: 1.5;
+  }
+  h1 { font-size: 20px; margin-bottom: 8px; }
+  p.instructions { font-size: 14px; color: #555; margin: 0 0 10px; }
+  .plot-block { margin: 24px 0; }
+  .plot-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+  .scenario {
+    font-size: 14px;
+    background: #f3f4f6;
+    border-left: 3px solid #2563eb;
+    padding: 12px 14px;
+    border-radius: 4px;
+    margin: 24px 0;
+  }
+  svg { width: 100%; cursor: crosshair; border-radius: 8px; }
+  .readout {
+    display: none;
+    margin: 10px 0;
+    font-size: 14px;
+    text-align: center;
+    font-weight: 500;
+  }
+  button {
+    display: block;
+    width: 100%;
+    padding: 10px;
+    font-size: 15px;
+    border-radius: 6px;
+    border: none;
+    background: #2563eb;
+    color: white;
+    cursor: pointer;
+    margin-top: 8px;
+  }
+  button:disabled { background: #9ca3af; cursor: not-allowed; }
+  #status { margin-top: 12px; font-size: 13px; text-align: center; min-height: 18px; }
+  .success { color: #16a34a; }
+  .error { color: #dc2626; }
+  #alreadyDone {
+    display: none;
+    margin-top: 24px;
+    padding: 14px;
+    background: #f3f4f6;
+    border-radius: 6px;
+    font-size: 15px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<h1>Digital Society Group 45 Survey Website: Present vs Future values</h1>
+
+<div id="alreadyDone">Thank you — a response has already been submitted from this browser, so the survey is closed here.</div>
+
+<div id="surveyContent">
+  <p class="instructions">A ternary plot is a triangular graph that shows the proportions of three variables that add up to a fixed total.</p>
+  <p class="instructions">In this survey, you will be asked to click the point on the graph that you believe best represents the balance between three values in the present day: Efficiency, Personal Autonomy, and Human Connection.</p>
+  <p class="instructions">You will then be presented with a scenario for a future set in the year 2060 and asked to click the point on the graph that you believe best represents the balance between the three values in this future scenario.</p>
+
+  <div class="plot-block">
+    <div class="plot-title">Present</div>
+    <svg id="tri-present" viewBox="0 0 400 380" role="img" aria-label="Ternary plot input for the present"></svg>
+    <div id="readout-present" class="readout"></div>
+  </div>
+
+  <div class="scenario">
+    <strong>Future Scenario:</strong> By 2060, large corporations using advanced AI have become more powerful than governments, providing essential services such as housing, education and healthcare. AI now produces most goods and services, limiting human labour. This has reduced the average working week to two days, allowing individuals to focus on their own wellbeing. Screens and smartphones are a thing of the past. They have been replaced by technological chips that deliver digital information into people's vision. Communication between individuals has reduced significantly. Society has become more efficient. However, increased dependence on technology raises concerns about social interaction and control.
+  </div>
+
+  <div class="plot-block">
+    <div class="plot-title">Future (2060)</div>
+    <svg id="tri-future" viewBox="0 0 400 380" role="img" aria-label="Ternary plot input for the future"></svg>
+    <div id="readout-future" class="readout"></div>
+  </div>
+
+  <button id="submitBtn" disabled>Submit response</button>
+  <div id="status"></div>
+</div>
+
+<script>
+  // --- PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE ---
+  const ENDPOINT_URL = "https://script.google.com/macros/s/AKfycbwVVnq-Gh7iqGv_b7ee9m82tV351LeyuhFynNuFR6WUDZawq98jvbd94CLORvxqYpvA/exec";
+  // Must match the SECRET_TOKEN constant in your Apps Script
+  const SECRET_TOKEN = "0818072000";
+
+  // One-response-per-browser check
+  const SUBMITTED_KEY = "digitalSocietyGroup45_submitted";
+  function alreadySubmitted() {
+    try { return localStorage.getItem(SUBMITTED_KEY) === "yes"; } catch (e) { return false; }
+  }
+  function markSubmitted() {
+    try { localStorage.setItem(SUBMITTED_KEY, "yes"); } catch (e) {}
+  }
+  if (alreadySubmitted()) {
+    document.getElementById('surveyContent').style.display = 'none';
+    document.getElementById('alreadyDone').style.display = 'block';
+  }
+
+  const A = {x:200,y:30}, B = {x:20,y:340}, C = {x:380,y:340};
+
+  // Top = Efficiency, Left = Personal Autonomy, Right = Human Connection
+  function toBary(px, py) {
+    const detT = (B.y-C.y)*(A.x-C.x) + (C.x-B.x)*(A.y-C.y);
+    const a = ((B.y-C.y)*(px-C.x) + (C.x-B.x)*(py-C.y)) / detT;
+    const b = ((C.y-A.y)*(px-C.x) + (A.x-C.x)*(py-C.y)) / detT;
+    const c = 1 - a - b;
+    return {efficiency: a, autonomy: b, connection: c};
+  }
+
+  function inside(bc) {
+    return bc.efficiency >= -0.001 && bc.autonomy >= -0.001 && bc.connection >= -0.001;
+  }
+
+  function buildPlot(svgEl) {
+    svgEl.innerHTML = `
+      <polygon points="200,30 20,340 380,340" fill="#f9fafb" stroke="#374151" stroke-width="1"/>
+      <text x="200" y="20" font-size="12" text-anchor="middle" fill="#374151">Efficiency</text>
+      <text x="8" y="358" font-size="12" text-anchor="start" fill="#374151">Personal Autonomy</text>
+      <text x="392" y="358" font-size="12" text-anchor="end" fill="#374151">Human Connection</text>
+      <circle class="marker" cx="200" cy="200" r="7" fill="#2563eb" style="display:none;"/>
+    `;
+  }
+
+  function wirePlot(svgId, readoutId) {
+    const svg = document.getElementById(svgId);
+    buildPlot(svg);
+    const marker = svg.querySelector('.marker');
+    const readout = document.getElementById(readoutId);
+    const state = { value: null };
+
+    svg.addEventListener('click', (e) => {
+      const rect = svg.getBoundingClientRect();
+      const scaleX = 400 / rect.width, scaleY = 380 / rect.height;
+      const px = (e.clientX - rect.left) * scaleX;
+      const py = (e.clientY - rect.top) * scaleY;
+      const bc = toBary(px, py);
+      if (!inside(bc)) return;
+
+      marker.setAttribute('cx', px);
+      marker.setAttribute('cy', py);
+      marker.style.display = 'block';
+      state.value = bc;
+
+      const eff = Math.round(bc.efficiency * 100);
+      const aut = Math.round(bc.autonomy * 100);
+      const con = 100 - eff - aut;
+      readout.style.display = 'block';
+      readout.textContent = `Efficiency ${eff}%  ·  Personal Autonomy ${aut}%  ·  Human Connection ${con}%`;
+      checkReady();
+    });
+
+    return state;
+  }
+
+  const presentState = wirePlot('tri-present', 'readout-present');
+  const futureState = wirePlot('tri-future', 'readout-future');
+  const submitBtn = document.getElementById('submitBtn');
+  const statusEl = document.getElementById('status');
+
+  function checkReady() {
+    submitBtn.disabled = !(presentState.value && futureState.value);
+  }
+
+  // Submit handler: runs when the button is clicked
+  submitBtn.addEventListener('click', async () => {
+    if (!presentState.value || !futureState.value) return;
+    if (alreadySubmitted()) return;
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Submitting...';
+    try {
+      // JSON keys are unchanged from the earlier version so the existing Apps Script still works:
+      // "Econ" = Efficiency, "Auto" = Personal Autonomy, "Care" = Human Connection
+      await fetch(ENDPOINT_URL, {
+        method: "POST",
+        body: JSON.stringify({
+          token: SECRET_TOKEN,
+          presentEcon: presentState.value.efficiency,
+          presentAuto: presentState.value.autonomy,
+          presentCare: presentState.value.connection,
+          futureEcon: futureState.value.efficiency,
+          futureAuto: futureState.value.autonomy,
+          futureCare: futureState.value.connection
+        }),
+        headers: { "Content-Type": "text/plain" }
+      });
+      markSubmitted();
+      statusEl.textContent = 'Thanks! Your response was recorded.';
+      statusEl.className = 'success';
+      submitBtn.textContent = 'Submitted';
+    } catch (err) {
+      statusEl.textContent = 'Could not reach the sheet. Check the endpoint URL and try again.';
+      statusEl.className = 'error';
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Submit response';
+    }
+  });
+</script>
+
+</body>
+</html>
